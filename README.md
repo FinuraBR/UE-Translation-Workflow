@@ -17,30 +17,30 @@ This process is split into two main paths, one for `.uasset` files and another f
 This is the main automated pipeline for translating game logic and UI elements.
 
 1.  **Find & Convert (`0_uasset_to_json.py`)**:
-    *   The workflow starts by scanning your raw Unreal Engine asset folder (`1_RAW`).
+    *   The workflow starts by scanning your raw Unreal Engine asset folder (`RAW_ASSETS_PATH` in `config.py`).
     *   It uses a quick binary search to identify `.uasset` files that likely contain actual text (ignoring purely binary assets).
     *   These text-containing `.uasset` files are then converted into editable JSON format using the `UAssetGUI` tool. These JSONs serve as the "template."
 
-2.  **Extract & Chunk (`1_json_divide.py`)**:
+2.  **Extract & Chunk (`1_json_extract_and_chunk.py`)**:
     *   From the converted JSONs, the script intelligently extracts *only* the strings that are meant for translation, filtering out technical code, IDs, or other non-translatable data based on predefined rules (`config.py`).
     *   To make translation manageable for the AI, this extracted text is then divided into smaller JSON "chunks."
 
-3.  **AI Translation (`2_json_translate_all.py`)**:
-    *   Each JSON chunk is sent to a powerful AI model (Google AI Studio's Gemini).
+3.  **AI Translation (`2_json_translate_chunks.py`)**:
+    *   Each JSON chunk is sent to a powerful AI model (Google AI Studio's Gemini, configured by `AI_MODEL_NAME` in `config.py`).
     *   The AI translates the English text to Brazilian Portuguese, focusing on preserving game-specific tags and formatting.
     *   The translated chunks are saved.
 
-4.  **Inject Translation (`4_json_join.py`)**:
+4.  **Inject Translation (`4_json_inject_translations.py`)**:
     *   The translated text from the chunks is carefully merged back into the original JSON template for each asset, ensuring that each translated string goes into its correct place.
     *   During this step, the script also "learns" by noting if the AI returned the exact same text for an entry. This suggests a technical term that might need to be added to a "blacklist" for future runs, improving accuracy and reducing unnecessary AI calls.
 
-5.  **Recompile & Clean (`5_json_fix_corruption.py`)**:
+5.  **Recompile & Clean (`5_json_to_uasset_conversion.py`)**:
     *   The fully translated JSON is converted back into its original `.uasset` format using `UAssetGUI`.
     *   A backup of the original `.uasset` is created for safety.
     *   Finally, all temporary files and folders generated during the process for that specific asset are cleaned up.
 
-6.  **Orchestration (`main.py`)**:
-    *   A central script (`main.py`) manages this entire flow, processing one `.uasset` file at a time. It handles error checks, skips already-translated files, and ensures a smooth transition between each step. If a potential blacklist term is found, it can pause the entire workflow for your review.
+6.  **Orchestration (`main_uasset_orchestrator.py` or `main.py`)**:
+    *   A central script manages this entire flow, processing one `.uasset` file at a time. It handles error checks, skips already-translated files, and ensures a smooth transition between each step. If a potential blacklist term is found, it can pause the entire workflow for your review.
 
 ## Secondary Workflow: `.locres` Files (Localization Resources)
 
@@ -50,7 +50,7 @@ This workflow handles `.locres` files, which are often simpler key-value pairs f
     *   You'll first need an external tool (not part of this repository) to convert your `.locres` file into a single, structured JSON file (e.g., `csvjson.json`) that this workflow can understand.
 
 2.  **Split (`csv_scripts/1_split_locres_json.py`)**:
-    *   This script takes the master `csvjson.json` and divides it into smaller, manageable chunks for AI translation, similar to the `.uasset` workflow.
+    *   This script takes the master `csvjson.json` and divides it into smaller, manageable chunks for AI translation.
 
 3.  **Translate (`csv_scripts/2_translate_locres_json.py`)**:
     *   The AI model translates these chunks from English to Brazilian Portuguese in parallel, optimizing speed.
@@ -72,15 +72,15 @@ Beyond the main translation pipelines, several scripts help manage and validate 
 *   **`pre_verification_cleaner.py`**:
     *   **Purpose**: A "smart filter" that runs *before* the main `.uasset` workflow. It quickly scans all original JSONs and marks those that definitively contain no translatable text as `.json.bak`. This prevents the AI from wasting time and API credits on irrelevant files.
 
-*   **`restore_bak.py`**:
+*   **`utility_restore_backups.py`**:
     *   **Purpose**: A simple tool to undo the `.json.bak` renaming, bringing files back into the processing queue if needed.
 
-*   **`automatic_judge_qa.py`**:
+*   **`qa_automatic_judge.py`**:
     *   **Purpose**: This is an advanced automated game tester for `.uasset` files. It performs a "real-world" test for each translated asset:
         1.  It automatically converts the translated JSON back to `.uasset` (even simulating mouse clicks and keyboard shortcuts in UAssetGUI if necessary!).
         2.  Packages the `.uasset` into a game mod (`.pak` file).
-        3.  Installs the mod into the game directory.
-        4.  Launches the game and monitors it for crashes, freezes ("Not Responding"), or critical error pop-ups for a set duration.
+        3.  Installs the mod into the game directory (`GAME_MODS_DIR` in `config.py`).
+        4.  Launches the game and monitors it for crashes, freezes ("Not Responding"), or critical error pop-ups for a set duration (`TEST_DURATION_SECONDS` in `config.py`).
         5.  Logs which assets caused problems (a "blacklist" of crashing mods) and which passed the test, providing crucial confidence in the translation's stability.
 
 ## Key Components
@@ -96,7 +96,7 @@ This workflow is a powerful tool for large-scale game localization, combining au
 
 ### 📜 License and Credits
 
-This project is open-source. Should these scripts provided here be utilized for other projects, **credit to the original creator is kindly requested**.
+This project is open-source. Should these scripts provided here be utilized for other projects, **credit to the original creator is requested**.
 
 **Credits:** ツFinuraBR
 
