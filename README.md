@@ -39,7 +39,7 @@ This is the main automated pipeline for translating game logic and UI elements.
     *   A backup of the original `.uasset` is created for safety.
     *   Finally, all temporary files and folders generated during the process for that specific asset are cleaned up.
 
-6.  **Orchestration (`main_uasset_orchestrator.py` or `main.py`)**:
+6.  **Orchestration (`main.py`)**:
     *   A central script manages this entire flow, processing one `.uasset` file at a time. It handles error checks, skips already-translated files, and ensures a smooth transition between each step. If a potential blacklist term is found, it can pause the entire workflow for your review.
 
 ## Secondary Workflow: `.locres` Files (Localization Resources)
@@ -49,17 +49,17 @@ This workflow handles `.locres` files, which are often simpler key-value pairs f
 1.  **Preparation (External Tool)**:
     *   You'll first need an external tool (not part of this repository) to convert your `.locres` file into a single, structured JSON file (e.g., `csvjson.json`) that this workflow can understand.
 
-2.  **Split (`csv_scripts/1_split_locres_json.py`)**:
+2.  **Split (`random_scripts/1_split_locres_json.py`)**:
     *   This script takes the master `csvjson.json` and divides it into smaller, manageable chunks for AI translation.
 
-3.  **Translate (`csv_scripts/2_translate_locres_json.py`)**:
+3.  **Translate (`random_scripts/2_translate_locres_json.py`)**:
     *   The AI model translates these chunks from English to Brazilian Portuguese in parallel, optimizing speed.
 
-4.  **Join (`csv_scripts/3_join_locres_json.py`)**:
+4.  **Join (`random_scripts/3_join_locres_json.py`)**:
     *   All the translated chunks are recombined into a single, comprehensive `traducao_PTBR.json` file.
     *   If any translation is missing or malformed (which can happen with AI), a special `[FALTOU_TRADUCAO]` tag is inserted to flag it.
 
-5.  **Repair (`csv_scripts/4_repair_locres_json.py`)**:
+5.  **Repair (`random_scripts/4_repair_locres_json.py`)**:
     *   This is a dynamic tool. If `[FALTOU_TRADUCAO]` tags are found, this script can extract *only* those missing entries into new repair chunks. You can then manually translate these or re-feed them to the AI. Once translated, running the script again injects these fixes back into the main `traducao_PTBR.json`.
 
 6.  **Finalization (External Tool)**:
@@ -68,9 +68,6 @@ This workflow handles `.locres` files, which are often simpler key-value pairs f
 ## Utility & Quality Assurance Scripts
 
 Beyond the main translation pipelines, several scripts help manage and validate the process:
-
-*   **`pre_verification_cleaner.py`**:
-    *   **Purpose**: A "smart filter" that runs *before* the main `.uasset` workflow. It quickly scans all original JSONs and marks those that definitively contain no translatable text as `.json.bak`. This prevents the AI from wasting time and API credits on irrelevant files.
 
 *   **`utility_restore_backups.py`**:
     *   **Purpose**: A simple tool to undo the `.json.bak` renaming, bringing files back into the processing queue if needed.
