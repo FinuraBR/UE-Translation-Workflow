@@ -1,12 +1,9 @@
 import json
 import os
 import sys
-import re
 
 from rich.console import Console
-from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn, TaskProgressColumn
-from rich.text import Text
-from rich.panel import Panel
+from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn
 
 from config import *
 
@@ -35,10 +32,10 @@ def is_valid_text(obj: dict, text: str) -> bool:
     return True
 
 def extract_recursively(obj: dict | list, extracted_list: list):
-    path_stack = []
+    stack = [(obj, "")]
 
-    def _extract(current_obj, current_path=""):
-        nonlocal extracted_list
+    while stack:
+        current_obj, current_path = stack.pop()
 
         if isinstance(current_obj, dict):
             history_type = current_obj.get("HistoryType", "")
@@ -46,27 +43,34 @@ def extract_recursively(obj: dict | list, extracted_list: list):
 
             if history_type in REQUIRED_HISTORY_TYPE and FORBIDDEN_FLAG not in flags:
                 obj_type = current_obj.get("Type", current_obj.get("$type", ""))
+                
                 if WHITELIST_TYPES_REGEX.search(obj_type):
-                    for key_name in ["LocalizedString", "SourceString", "CultureInvariantString", "DisplayString"]:
+                    for key_name in TEXT_INJECTION_KEYS:
                         if key_name in current_obj:
                             value = current_obj.get(key_name)
+                            
                             if is_valid_text(current_obj, value):
-                                extracted_list.append({
-                                    "p": f"{current_path}.{key_name}" if current_path else key_name,
-                                    "t": value
-                                })
-                                return
+                                cleaned_value = value.strip() if isinstance(value, str) else value
+                                if cleaned_value:
+                                    extracted_list.append({
+                                        "p": f"{current_path}.{key_name}" if current_path else key_name,
+                                        "t": cleaned_value
+                                    })
+                                    break
+                    continue
 
+            items_to_push = []
             for k, v in current_obj.items():
                 if k in ["Namespace", "Key", "Guid", "Type", "$type", "Flags", "Class", "Outer"]:
                     continue
-                _extract(v, f"{current_path}.{k}" if current_path else k)
-                    
+                items_to_push.append((v, f"{current_path}.{k}" if current_path else k))
+            stack.extend(reversed(items_to_push))
+                
         elif isinstance(current_obj, list):
+            items_to_push = []
             for i, item in enumerate(current_obj):
-                _extract(item, f"{current_path}[{i}]")
-    
-    _extract(obj)
+                items_to_push.append((item, f"{current_path}[{i}]"))
+            stack.extend(reversed(items_to_push))
 
 
 def main():
@@ -129,8 +133,9 @@ def main():
     chunks, current_block, current_block_size = [], [], 0
     
     with Progress(BarColumn(), TextColumn("{task.completed}/{task.total}"), TimeElapsedColumn(),
-                  TextColumn("[bold magenta]{task.description}")) as progress:
-        chunk_task = progress.add_task(total=len(final_extracted_list))
+                  TextColumn("[bold magenta]Chunking text...")) as progress:
+        chunk_task = progress.add_task("Chunking", total=len(final_extracted_list))
+        progress.update(chunk_task)
 
         for item in final_extracted_list:
             item_size = len(json.dumps(item, ensure_ascii=False))
