@@ -3,18 +3,12 @@ import sys
 import time
 import json
 import threading
-from concurrent.futures import ThreadPoolExecutor
+import random 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config import (
-    AI_TIMEOUT_SECONDS,
-    AI_MAX_RETRIES,
-    API_KEY,
-    AI_MODEL_NAME,
-    AI_TEMPERATURE,
-    MAX_WORKERS
-)
+from config import *
 
 try:
     from openai import OpenAI  
@@ -27,9 +21,19 @@ client = OpenAI(
     base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
 )
 
+script_dir = os.path.dirname(os.path.abspath(__file__))
+input_folder = os.path.join(script_dir, "1_partes_para_traduzir")
+output_folder = os.path.join(script_dir, "2_partes_traduzidas")
+
+if not os.path.exists(output_folder):
+    os.makedirs(output_folder)
+
 DEFAULT_SYSTEM_PROMPT = """EN->PT-BR Game JSON Localizer. Raw JSON output only. No markdown.
-1. Copy 'key' and 'source 'verbatim. NEVER alter paths.
-2. Translate 'Translation' values only.""" 
+1. Copy 'p' verbatim. NEVER alter paths.
+2. Translate 't' values only.""" 
+
+def get_dynamic_workers(total_files):
+    return min(os.cpu_count() or 4, total_files or 1)
 
 def clean_ai_response(raw_text_response: str):
     try:
@@ -47,7 +51,7 @@ def clean_ai_response(raw_text_response: str):
 def execute_ai_call_in_thread(system_prompt: str, user_prompt: str, result_container: dict):
     try:
         response = client.chat.completions.create(
-            model=AI_MODEL_NAME,
+            model=AI_MODEL_NAME, 
             response_format={ "type": "json_object" },
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -68,7 +72,7 @@ def execute_ai_call_in_thread(system_prompt: str, user_prompt: str, result_conta
     except Exception as e:
         result_container['error'] = e
 
-def get_translation_with_timeout(json_content: str) -> str | None:
+def get_translation_with_timeout(json_content: str, file_name: str) -> str | None:
     for attempt in range(1, AI_MAX_RETRIES + 1):
         container = {'res': None, 'erro': None}
         thread = threading.Thread(target=execute_ai_call_in_thread, args=(DEFAULT_SYSTEM_PROMPT, json_content, container))
@@ -78,12 +82,17 @@ def get_translation_with_timeout(json_content: str) -> str | None:
         thread.join(timeout=AI_TIMEOUT_SECONDS)
         
         if thread.is_alive():
-            print(f"⏳ Timeout on attempt {attempt}")
+            print(f"⏳ [{file_name}] Timeout (Attempt {attempt})")
             continue
 
         if container['erro']:
-            print(f"❌ API Error: {container['erro']}")
-            time.sleep(1)
+            error_message = str(container['erro'])
+            if "429" in error_message or "RESOURCE_EXHAUSTED" in error_message:
+                wait_time = 60 + random.uniform(0, 1)
+                print(f"⚠️ [{file_name}] Rate limit hit. Waiting {wait_time:.2f}s... (Attempt {attempt})")
+                time.sleep(wait_time)
+            else:
+                print(f"❌ [{file_name}] Error: {error_message} (Attempt {attempt})")
             continue
 
         final_text = container['res']
@@ -105,7 +114,7 @@ def process_single_file(filename: str, input_dir: str, output_dir: str) -> str:
         if not content.strip():
             return f"⚠️ {filename} is empty."
 
-        translation = get_translation_with_timeout(content)
+        translation = get_translation_with_timeout(content, filename)
 
         if translation:
             with open(output_path, 'w', encoding='utf-8') as f:
@@ -117,29 +126,66 @@ def process_single_file(filename: str, input_dir: str, output_dir: str) -> str:
     except Exception as e:
         return f"💥 Error in {filename}: {e}"
 
-def main():
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    input_folder = os.path.join(script_dir, "1_partes_para_traduzir")
-    output_folder = os.path.join(script_dir, "2_partes_traduzidas")
+def check_final_status() -> bool:
+    """
+    Checks if all input files have corresponding, valid output files after translation.
+    """
+    global input_folder, output_folder
+    
+    input_files = set([f for f in os.listdir(input_folder) if f.endswith('.json')])
+    output_files = set([f for f in os.listdir(output_folder) if f.endswith('.json')])
+    
+    missing_files = input_files - output_files
+    if missing_files:
+        print(f"\n❌ ERROR: {len(missing_files)} files are missing from output.")
+        return False
+    
+    for f in output_files:
+        path = os.path.join(output_folder, f)
+        if os.path.getsize(path) < 10:
+            print(f"❌ ERROR: Output file {f} is incomplete or empty.")
+            return False
+    return True
 
-    if not os.path.exists(output_folder): os.makedirs(output_folder)
-
+def execute_parallel_translation():
+    global input_folder, output_folder
+    
     all_files = sorted([f for f in os.listdir(input_folder) if f.endswith(".json")])
+    total_to_process = len(all_files)
+    
+    if not all_files:
+        print("✨ No JSON chunks found to translate. Exiting.")
+        return
+        
+    workers = get_dynamic_workers(total_to_process)
     pending_files = [f for f in all_files if not os.path.exists(os.path.join(output_folder, f))]
     
     if not pending_files:
         print("✨ All files are already processed!")
         return
 
-    print(f"\n🚀 Starting Parallel Translation | {len(pending_files)} files | Threads: {MAX_WORKERS}\n")
+    print(f"\n🚀 Starting Parallel Translation | {len(pending_files)} files | Threads: {workers}\n")
 
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+    with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = [executor.submit(process_single_file, f, input_folder, output_folder) for f in pending_files]
         
-        for future in futures:
-            print(future.result())
+        for future in as_completed(futures):
+            try:
+                result = future.result()
+                print(result)
+            except Exception as e:
+                print(f"❌ Critical error in thread: {e}")
 
     print("\n🏁 Translation workflow ended.")
+
+def main():
+    execute_parallel_translation()
+    
+    if check_final_status():
+        print(f"\n🏁 Workflow successfully completed.")
+    else:
+        print("\n⚠️ The workflow finished with pending issues.")
+        sys.exit(1)
 
 if __name__ == '__main__':
     main()
