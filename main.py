@@ -3,12 +3,7 @@ import subprocess
 import sys
 import time 
 
-from config import (
-    ORIGINAL_JSON_DIR,
-    FINAL_MOD_DIR,
-    CHUNK_DIR_1_TO_TRANSLATE,
-    CHUNK_DIR_2_TRANSLATED
-)
+from config import *
 
 def clean_workflow_temp_dirs():
     temp_folders = {CHUNK_DIR_1_TO_TRANSLATE, CHUNK_DIR_2_TRANSLATED}
@@ -69,7 +64,7 @@ def start_automation():
                 if ai_translation_result.returncode == 1:
                     break
 
-                join_result = subprocess.run([sys.executable, "4_json_inject_translations.py", file_name, subpath])
+                join_result = subprocess.run([sys.executable, "3_json_inject_translations.py", file_name, subpath])
 
                 if join_result.returncode == 11:
                     pause_for_blacklist_review = True
@@ -87,7 +82,7 @@ def start_automation():
                     print(f"❌ Critical error in Step 4 for file {file_name}.")
                     break
 
-                subprocess.run([sys.executable, "5_json_to_uasset_conversion.py", file_name, subpath], check=True)
+                subprocess.run([sys.executable, "4_json_to_uasset_conversion.py", file_name, subpath], check=True)
 
                 print(f"\n✅ SUCCESS: {file_name} finalized.")
                 
