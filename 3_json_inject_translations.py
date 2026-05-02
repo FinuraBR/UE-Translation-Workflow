@@ -3,14 +3,7 @@ import os
 import glob
 import re
 import sys
-from config import (
-    ORIGINAL_JSON_DIR,
-    CHUNK_DIR_3_VERIFIED,
-    TRANSLATED_JSON_FILE,
-    PROJECT_STATUS_FILE,
-    BASE_DIR,
-    TEXT_INJECTION_KEYS
-)
+from config import *
 
 def register_blacklist_suggestion(text: str) -> bool:
     log_path = os.path.join(BASE_DIR, "suggestions_blacklist.txt")
@@ -87,7 +80,7 @@ def main():
     with open(template_path, 'r', encoding='utf-8') as f:
         original_data = json.load(f)
     
-    translated_parts_files = sorted(glob.glob(os.path.join(CHUNK_DIR_3_VERIFIED, 'part_*.json')))
+    translated_parts_files = sorted(glob.glob(os.path.join(CHUNK_DIR_2_TRANSLATED, 'part_*.json')))
     if not translated_parts_files:
         print("⚠️ No translated parts found.")
         sys.exit(1)
