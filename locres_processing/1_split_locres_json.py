@@ -4,11 +4,11 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config import (
-    MAX_CHARS_PER_OUTPUT_FILE,
-    OUTPUT_CHUNK_DIR,
-    ORIGINAL_INPUT_FILE
-)
+from config import *
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+ORIGINAL_INPUT_FILE = os.path.join(SCRIPT_DIR, 'csvjson.json')
+OUTPUT_CHUNK_DIR = os.path.join(SCRIPT_DIR, '1_partes_para_traduzir')
 
 def split_json_intelligently():
     if not os.path.exists(OUTPUT_CHUNK_DIR):
@@ -41,7 +41,7 @@ def split_json_intelligently():
         item_string = json.dumps(item, ensure_ascii=False, indent=2)
         item_size = len(item_string)
 
-        if (current_buffer_size + item_size) > MAX_CHARS_PER_OUTPUT_FILE and item_buffer:
+        if (current_buffer_size + item_size) > MAX_CHARS_PER_CHUNK and item_buffer:
             save_json_chunk(item_buffer, file_counter)
             file_counter += 1
             item_buffer = []
